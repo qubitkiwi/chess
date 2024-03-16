@@ -1,6 +1,5 @@
 use iced::{
-    Alignment, Application, Command, Element, Length, Settings, 
-    Subscription, executor,
+    Alignment, Application, Command, Element, Length, Settings, executor
 };
 use iced::theme::{self, Theme};
 use iced::widget::{
@@ -15,34 +14,26 @@ pub fn main() -> iced::Result {
 
 const CHESS_LEHGT: usize = 8;
 
-/* 
-    ♔ ♚
-    ♕/♛
-    ♖/♜
-    ♗/♝
-    ♘/♞
-    ♙/♟
-*/
 
-enum TileColor {
-    White,
-    Black,
-    HighLight,
+#[derive(Clone, Copy)]
+struct TileState {
+    piece_state: Option<PieceState>,
+    high_light: bool,
 }
 
-#[derive(Clone)]
-struct TileState {
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PieceState {
     owner: Owner,
     piece: ChessPiece,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 enum Owner {
     White,
     Black,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Copy, Debug)]
 enum ChessPiece {
     King,
     Queen,
@@ -60,23 +51,23 @@ struct Point {
     w: usize,
 }
 
-type Board = Vec<Vec<Option<TileState>>>;
+type Board = Vec<Vec<TileState>>;
 
 struct Chess {
     board: Board,
     turn: Owner,
-    choose: Option<Point>,
+    choose: Option<(Point, PieceState)>,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    MoveAble(Point),
+    MoveAble(Point, Option<PieceState>),
     Move(Point),
     Reset,
 }
 
 fn init_board() -> Board {
-    let mut board: Board = vec![vec![None ; CHESS_LEHGT]; CHESS_LEHGT];
+    let mut board: Board = vec![vec![TileState {piece_state: None, high_light: false}; CHESS_LEHGT]; CHESS_LEHGT];
 
     // ♜♞♝♛♚♝♞♜
     let chess_seq: [ChessPiece; 8] = [
@@ -91,21 +82,22 @@ fn init_board() -> Board {
                         ];
 
     for i in 0..CHESS_LEHGT {
-        board[0][i] = Some( TileState {owner: Owner::Black , piece: chess_seq[i].clone() });
-        board[1][i] = Some( TileState {owner: Owner::Black , piece: ChessPiece::Pawn });
+        board[0][i] = TileState {piece_state: Some( PieceState {owner: Owner::Black , piece: chess_seq[i].clone() }), high_light: false};
+        board[1][i] = TileState {piece_state: Some( PieceState {owner: Owner::Black , piece: ChessPiece::Pawn }), high_light: false};
+
         
-        board[6][i] = Some( TileState {owner: Owner::White , piece: ChessPiece::Pawn });
-        board[7][i] = Some( TileState {owner: Owner::White , piece: chess_seq[i].clone() });
+        board[6][i] = TileState {piece_state: Some( PieceState {owner: Owner::White , piece: ChessPiece::Pawn }), high_light: false};
+        board[7][i] = TileState {piece_state: Some( PieceState {owner: Owner::White , piece: chess_seq[i].clone() }), high_light: false};
     }
 
     board
 }
 
-fn view_tile(tile: &Option<TileState>, h: usize, w: usize) -> Element<Message>  {
+fn view_tile(tile: &TileState, h: usize, w: usize) -> Element<Message>  {
     let b;
     let text_color;
 
-    if let Some(x) = tile {
+    if let Some(x) = &tile.piece_state {
         match x.owner {
             Owner::White => { text_color = custom_theme::BTColor::White; },
             Owner::Black => { text_color = custom_theme::BTColor::Black; },
@@ -120,43 +112,346 @@ fn view_tile(tile: &Option<TileState>, h: usize, w: usize) -> Element<Message>  
             ChessPiece::Knight  => { text("♞") },
         };
         
-        b = button(t.size(50.0).horizontal_alignment(iced::alignment::Horizontal::Center)).on_press(Message::MoveAble(Point{ h, w }));
+        if tile.high_light == true {
+            b = button(t.size(50.0).horizontal_alignment(iced::alignment::Horizontal::Center)).on_press(Message::Move(Point{ h, w }));
+        } else {
+            b = button(t.size(50.0).horizontal_alignment(iced::alignment::Horizontal::Center)).on_press(Message::MoveAble(Point{ h, w }, Some(*x)));
+        }
+        
     } else {
-        b = button(" ");
+
+        if tile.high_light == true {
+            b = button(" ").on_press(Message::Move(Point{ h, w }));
+        } else {
+            b = button(" ");
+        }
         text_color = custom_theme::BTColor::White;
     }
     
-    let background = match (h, w) {
-        (h, w) if (h % 2) ^ (w % 2) == 0 => {custom_theme::BColor::Bright},
-        (_,_) => {custom_theme::BColor::Dark},
+    let background = match tile.high_light {
+        true => { custom_theme::BColor::HighLight },
+        false => {
+            match (h, w) {
+                (h, w) if (h % 2) ^ (w % 2) == 0 => {custom_theme::BColor::Bright},
+                (_,_) => {custom_theme::BColor::Dark},
+            }
+        }
     };
+    
 
     b.height(Length::Fixed(80.0)).width(Length::Fixed(80.0))
         .style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background, text_color})))
         .into()   
 }
 
+fn move_able_rook(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
 
-fn move_able(board: &Board, p: Point) -> Board {
+    let w = p.w;
+    let h = p.h;
+
+    let piece = board[h][w].piece_state.clone().unwrap();
+
+    let mut dw = w as i32 - 1;
+    while dw >= 0{
+        if let Some(x) = board[h][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h, w: dw as usize} );
+            }
+            break;
+        }
+        high_light.push(Point {h: h as usize, w: dw as usize} );
+        dw -= 1;
+    }
+
+    let mut dw = w as i32 + 1;
+    while dw < CHESS_LEHGT as i32 {
+        if let Some(x) = board[h][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h, w: dw as usize} );
+            }
+            break;
+        }
+        high_light.push(Point {h, w: dw as usize} );
+        dw += 1;
+    }
+
+    let mut dh = h as i32 + 1;
+    while dh < CHESS_LEHGT as i32 {
+        if let Some(x) = board[dh as usize][w].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w });
+        dh += 1;   
+    }
+
+    let mut dh = h as i32 - 1;
+    while dh >= 0{
+        if let Some(x) = board[dh as usize][w].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w });
+        dh -= 1;   
+    }
+
+
+    high_light
+}
+
+fn move_able_bishop(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
+
+    let w = p.w;
+    let h = p.h;
+
+    let piece = board[h][w].piece_state.clone().unwrap();
+
+    let mut dh = h as i32 - 1;
+    let mut dw = w as i32 - 1;
+    while dh >= 0 && dw >= 0 {
+        if let Some(x) = board[dh as usize][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w: dw as usize });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w: dw as usize });
+
+        dh -= 1;
+        dw -= 1;
+    }
+
+    let mut dh = h as i32 + 1;
+    let mut dw = w as i32 - 1;
+    while dh < CHESS_LEHGT as i32 && dw >= 0 {
+        if let Some(x) = board[dh as usize][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w: dw as usize });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w: dw as usize });
+
+        dh += 1;
+        dw -= 1;
+    }
+
+    let mut dh = h as i32 - 1;
+    let mut dw = w as i32 + 1;
+    while dh >= 0 && dw < CHESS_LEHGT as i32 {
+        if let Some(x) = board[dh as usize][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w: dw as usize });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w: dw as usize });
+
+        dh -= 1;
+        dw += 1;
+    }
+
+    let mut dh = h as i32 + 1;
+    let mut dw = w as i32 + 1;
+    while dh < CHESS_LEHGT as i32 && dw < CHESS_LEHGT as i32 {
+        if let Some(x) = board[dh as usize][dw as usize].piece_state {
+            if x.owner != piece.owner {
+                high_light.push(Point {h : dh as usize, w: dw as usize });
+            }
+            break;
+        }
+        high_light.push(Point {h : dh as usize, w: dw as usize });
+
+        dh += 1;
+        dw += 1;
+    }
+
+
+    high_light
+}
+
+fn move_able_king(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
+
+    let w = p.w;
+    let h = p.h;
+
+    let piece = board[h][w].piece_state.clone().unwrap();
+
+    for dh in -1..=1 {
+        for dw in -1..=1 {
+            if ((h as i32 + dh >= 0) && (h as i32 + dh < CHESS_LEHGT as i32)) && ((w as i32 + dw >= 0) && (w as i32 + dw < CHESS_LEHGT as i32)) {
+                if dh == 0 && dw == 0 { continue; }
+
+                if let Some(x) = board[(h as i32 + dh) as usize][(w as i32 + dw) as usize].piece_state {
+                    if x.owner != piece.owner {
+                        high_light.push(Point { h: (h as i32 + dh) as usize, w : (w as i32 + dw) as usize});
+                    }
+                } else {
+                    high_light.push(Point { h: (h as i32 + dh) as usize, w : (w as i32 + dw) as usize});
+                }                
+            }
+        }    
+    }
+
+    high_light
+}
+
+fn move_able_knight(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
+
+    let w = p.w as i32;
+    let h = p.h as i32;
+
+    let piece = board[h as usize][w as usize].piece_state.clone().unwrap();
+    
+    let list = [(2, 1), 
+                                 (2, -1),
+                                 (-2, 1),
+                                 (-2, -1),
+                                 (1, 2),
+                                 (1, -2),
+                                 (-1, 2),
+                                 (-1, -2),
+                                 ];
+
+    for (dh, dw) in list {
+        if h + dh >= 0 && h + dh < CHESS_LEHGT as i32 && w + dw >= 0 && w + dw < CHESS_LEHGT as i32 {
+            
+            if let Some(x) = board[(h + dh) as usize][(w + dw) as usize].piece_state {
+                if x.owner != piece.owner {
+                    high_light.push(Point { h: (h + dh) as usize, w : (w + dw) as usize});
+                }
+            } else {
+                high_light.push(Point { h: (h + dh) as usize, w : (w + dw) as usize});
+            }
+        }
+    }
+
+
+    high_light
+}
+
+fn move_able_pawn(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
+
+    let h = p.h;
+    let w = p.w;    
+
+    let piece = board[h][w].piece_state.clone().unwrap();
+    match piece.owner {
+        Owner::Black => {
+            if h == 1 {
+                let mut dh = 1;
+                while dh <= 2 {
+                    if board[h + dh][w].piece_state == None {
+                        high_light.push(Point { h: h + dh, w });
+                    } else {
+                        break;
+                    }
+                    dh += 1;
+                }
+            } else {
+                if board[h + 1][w].piece_state == None {
+                    high_light.push(Point { h: h + 1, w });
+                }
+
+            }
+            // attck
+            if w + 1 < CHESS_LEHGT {
+                if let Some(x) = board[h + 1][w + 1].piece_state {
+                    if x.owner != piece.owner {
+                        high_light.push(Point { h: h + 1, w : w + 1});
+                    }
+                }
+            }
+
+            if w as i32 - 1 >= 0 {
+                if let Some(x) = board[h + 1][w - 1].piece_state {
+                    if x.owner != piece.owner {
+                        high_light.push(Point { h: h + 1, w : w - 1});
+                    }
+                }
+            }
+        },
+        Owner::White => {
+            if h == 6 {
+                let mut dh = 1;
+                while dh <= 2 {
+                    if board[h - dh][w].piece_state == None {
+                        high_light.push(Point { h: h - dh, w });
+                    } else {
+                        break;
+                    }
+                    dh += 1;
+                }
+            } else {
+                if board[h - 1][w].piece_state == None {
+                    high_light.push(Point { h: h - 1, w });
+                }
+
+            }
+            // attck
+            if w + 1 < CHESS_LEHGT {
+                if let Some(x) = board[h - 1][w + 1].piece_state {
+                    if x.owner != piece.owner {
+                        high_light.push(Point { h: h - 1, w : w + 1});
+                    }
+                }
+            }
+
+            if w as i32 - 1 >= 0 {
+                if let Some(x) = board[h - 1][w - 1].piece_state {
+                    if x.owner != piece.owner {
+                        high_light.push(Point { h: h - 1, w : w - 1});
+                    }
+                }
+            }
+        },
+    }
+
+    high_light
+}
+
+fn move_able_queen(board: &Board, p: &Point) -> Vec<Point> {
+    let mut high_light: Vec<Point> = Vec::new();
+
+    high_light.extend(move_able_bishop(&board, &p));
+    high_light.extend(move_able_rook(&board, &p));
+
+    high_light
+}
+
+fn move_able(board: &Board, p: &Point, piece: ChessPiece) -> Vec<Point> {
+    let move_able = match piece {
+        ChessPiece::Rook    => { move_able_rook },
+        ChessPiece::Bishop  => { move_able_bishop },
+        ChessPiece::King    => { move_able_king },
+        ChessPiece::Knight  => { move_able_knight },
+        ChessPiece::Pawn    => { move_able_pawn },
+        ChessPiece::Queen   => { move_able_queen },
+    };
+
+    move_able(&board, &p)
+}
+
+fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
     let mut cloned_board: Board = board.iter()
         .map(|inner_vector| inner_vector.clone())
         .collect();
 
-    let t = cloned_board[p.h][p.w].clone().unwrap();
-    match t.piece {
-        ChessPiece::Pawn => {},
-        ChessPiece::Bishop => {},
-        ChessPiece::King => {},
-        ChessPiece::Knight => {},
-        ChessPiece::Queen => {},
-        ChessPiece::Rook => {
-            
-        },
-    };
-
-
+    for p in light {
+        cloned_board[p.h][p.w].high_light = value;
+    }
     cloned_board
 }
+
 
 impl Application for Chess {
     type Message = Message;
@@ -183,28 +478,55 @@ impl Application for Chess {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::MoveAble(p) => {
+            Message::MoveAble(p, piece_state) => {
+                
+                if let Some((point, piece_state)) = &self.choose {
 
-                if let Some(t) = &self.board[p.h][p.w] {
-
+                    let light = move_able(&self.board, &point, piece_state.piece);
+                    self.board = update_high_light(&self.board, light, false);
                 }
 
-
-
+                if let Some(x) = piece_state {
+                    if x.owner == self.turn {
+                        let light = move_able(&self.board, &p, x.piece);
+                        self.board = update_high_light(&self.board, light, true);
+                        self.choose = Some((p, x));
+                    }
+                }
+                
                 Command::none()
             },
             Message::Move(p) => {
+                // let mut cloned_board: Board = self.board.iter()
+                //     .map(|inner_vector| inner_vector.clone())
+                //     .collect();
+                
+                if let Some((point, piece_state)) = &self.choose {
+                
+                    let light = move_able(&self.board, &point, piece_state.piece);
+                    self.board = update_high_light(&self.board, light, false);
+
+                    self.board[p.h][p.w] = self.board[point.h][point.w];
+                    self.board[point.h][point.w] = TileState {piece_state: None, high_light: false};
+                    self.choose = None;
+                    
+                    self.turn = match self.turn {
+                        Owner::White => { Owner::Black },
+                        Owner::Black => { Owner::White }
+                    }
+                }
+                
+
                 Command::none()
             },
             Message::Reset => {
                 let board = init_board();
 
-                Self {
-                    board,
-                    turn: Owner::White,
-                    choose: None,
-                };
-                Command::none()
+                self.board = board;
+                self.turn = Owner::White;
+                self.choose = None;
+
+                Command::none()        
             },
         }
     }
@@ -212,7 +534,7 @@ impl Application for Chess {
     fn view(&self) -> Element<Message> {
         
 
-        (0..CHESS_LEHGT).into_iter().fold(Column::new() ,|c, i|
+        let board = (0..CHESS_LEHGT).into_iter().fold(Column::new() ,|c, i|
                 c.push(Element::from(
                     (0..CHESS_LEHGT).into_iter().fold(Row::new().align_items(Alignment::Center) ,|c, j|
                         c.push(
@@ -220,7 +542,19 @@ impl Application for Chess {
                         )
                     )
                 ))
-            ).into()
+            );
+        
+        container(
+            column!(
+                button("reset").on_press(Message::Reset),
+                board,
+            )
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_y()
+        .center_x()
+        .into()
         
     }
 }
@@ -229,7 +563,6 @@ impl Application for Chess {
 
 
 mod custom_theme {
-    // use iced::{color, Background, Border, Shadow};
     use iced::{Background, Border, Color, color, Shadow, Vector};
 
     use iced::widget::button;
@@ -262,7 +595,7 @@ mod custom_theme {
             let background: Option<Background> = match self.background {
                 BColor::Bright      => { Some(Background::Color(color!(0xf4, 0xdf, 0xc1))) },
                 BColor::Dark        => { Some(Background::Color(color!(0xb6, 0x87, 0x6b))) },
-                BColor::HighLight   => { Some(Background::Color(color!(0xcc, 0xc0, 0xb4))) },
+                BColor::HighLight   => { Some(Background::Color(color!(0xFF, 0xFF, 0x0))) },
             };
 
             let text_color: Color = match self.text_color {
