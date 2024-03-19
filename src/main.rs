@@ -5,6 +5,10 @@ use iced::theme::{self, Theme};
 use iced::widget::{
     text, button, container, column, row, Column, Row,
 };
+mod modal;
+use modal::Modal;
+mod custom_theme;
+
 
 pub fn main() -> iced::Result {
     Chess::run(Settings {
@@ -57,12 +61,25 @@ struct Chess {
     board: Board,
     turn: Owner,
     choose: Option<(Point, PieceState)>,
+    en_passant: Option<Point>,
+    castling: Castling,
+    promotion_popup: bool,
+}
+
+struct Castling {
+    w_r_rook: bool,
+    w_l_rook: bool,
+    w_king: bool,
+    b_r_rook: bool,
+    b_l_rook: bool,
+    b_king: bool,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     MoveAble(Point, Option<PieceState>),
     Move(Point),
+    Promotion(PieceState),
     Reset,
 }
 
@@ -452,6 +469,12 @@ fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
     cloned_board
 }
 
+fn en_passant() {
+
+}
+
+
+
 
 impl Application for Chess {
     type Message = Message;
@@ -467,6 +490,10 @@ impl Application for Chess {
                 board,
                 turn: Owner::White,
                 choose: None,
+                
+                en_passant: None,
+                castling: Castling { w_r_rook:false, b_king: false,b_l_rook:false, b_r_rook:false,w_king:false,w_l_rook:false},
+                promotion_popup: false,
             },
             Command::none()
         )
@@ -501,14 +528,30 @@ impl Application for Chess {
                 //     .map(|inner_vector| inner_vector.clone())
                 //     .collect();
                 
-                if let Some((point, piece_state)) = &self.choose {
-                
+                if let Some((point, piece_state)) = self.choose.clone() {
+                    
+                    // if piece_state.piece == ChessPiece::Pawn {
+                    //     // if let Some(x) = self.en_passant {
+                    //     //     // en passant
+
+                    //     // }
+                        
+                    // }
+
                     let light = move_able(&self.board, &point, piece_state.piece);
                     self.board = update_high_light(&self.board, light, false);
 
                     self.board[p.h][p.w] = self.board[point.h][point.w];
                     self.board[point.h][point.w] = TileState {piece_state: None, high_light: false};
                     self.choose = None;
+                    
+
+                    // Promotion
+                    if (piece_state.piece == ChessPiece::Pawn) && (((piece_state.owner == Owner::White) && (p.h == 0)) || ((piece_state.owner == Owner::Black) && (p.h == 7))) {
+                        self.promotion_popup = true;
+                    }
+                
+
                     
                     self.turn = match self.turn {
                         Owner::White => { Owner::Black },
@@ -517,6 +560,35 @@ impl Application for Chess {
                 }
                 
 
+
+                Command::none()
+            },
+            Message::Promotion(piece_state) => {
+                match piece_state.owner {
+                    Owner::White => {
+                        for i in 0..CHESS_LEHGT {
+                            if let Some(x) = self.board[0][i].piece_state {
+                                if x.piece == ChessPiece::Pawn {
+                                    self.board[0][i].piece_state = Some(piece_state);
+                                    break;
+                                }
+                            }
+                        }
+                    },
+                    Owner::Black => {
+                        for i in 0..CHESS_LEHGT {
+                            if let Some(x) = self.board[7][i].piece_state {
+                                if x.piece == ChessPiece::Pawn {
+                                    self.board[7][i].piece_state = Some(piece_state);
+                                    break;
+                                }
+                            }
+                        }
+                    },
+                }
+
+
+                self.promotion_popup = false;
                 Command::none()
             },
             Message::Reset => {
@@ -526,7 +598,9 @@ impl Application for Chess {
                 self.turn = Owner::White;
                 self.choose = None;
 
-                Command::none()        
+                self.promotion_popup = true;
+
+                Command::none()     
             },
         }
     }
@@ -534,7 +608,7 @@ impl Application for Chess {
     fn view(&self) -> Element<Message> {
         
 
-        let board = (0..CHESS_LEHGT).into_iter().fold(Column::new() ,|c, i|
+        let board = container((0..CHESS_LEHGT).into_iter().fold(Column::new() ,|c, i|
                 c.push(Element::from(
                     (0..CHESS_LEHGT).into_iter().fold(Row::new().align_items(Alignment::Center) ,|c, j|
                         c.push(
@@ -542,111 +616,45 @@ impl Application for Chess {
                         )
                     )
                 ))
-            );
+            ));
         
-        container(
-            column!(
-                button("reset").on_press(Message::Reset),
-                board,
+        let content = container(
+                column!(
+                    button("reset").on_press(Message::Reset).padding(5),
+                    board,
+                )
+                .align_items(Alignment::Center)
             )
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_y()
-        .center_x()
-        .into()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_y()
+            .center_x();
+
+
+        if self.promotion_popup {
+            
+            let (text_color, owner) = match self.turn {
+                Owner::White => (custom_theme::BTColor::Black, Owner::Black),
+                Owner::Black => (custom_theme::BTColor::White, Owner::White),
+            };
+
+            let modal = container(
+                column![
+                    text("promotion").size(20.0),
+                    row![
+                        button(text("♛").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Queen})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Bright, text_color: text_color.clone()}))),
+                        button(text("♝").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Bishop})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Dark, text_color: text_color.clone()}))),
+                        button(text("♞").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Knight})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Bright, text_color: text_color.clone()}))),
+                        button(text("♜").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Rook})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Dark, text_color: text_color.clone()}))),
+                    ]
+                ].align_items(Alignment::Center)
+            ).style(theme::Container::Box);
+
+            Modal::new(content, modal).into()
+        } else {
+            content.into()
+        }
         
-    }
-}
-
-
-
-
-mod custom_theme {
-    use iced::{Background, Border, Color, color, Shadow, Vector};
-
-    use iced::widget::button;
-    use iced::theme::Theme;
-
-    #[derive(Default)]
-    pub enum BColor {
-        #[default]
-        Bright,
-        Dark,
-        HighLight,
-    }
-
-    pub enum BTColor {
-        White,
-        Black,
-    }
-
-    pub struct Bbutton {
-        pub background : BColor,
-        pub text_color: BTColor,
-    }
-
-
-    impl button::StyleSheet for Bbutton {
-        type Style = Theme;
-    
-        fn active(&self, _style: &Self::Style) -> button::Appearance {
-
-            let background: Option<Background> = match self.background {
-                BColor::Bright      => { Some(Background::Color(color!(0xf4, 0xdf, 0xc1))) },
-                BColor::Dark        => { Some(Background::Color(color!(0xb6, 0x87, 0x6b))) },
-                BColor::HighLight   => { Some(Background::Color(color!(0xFF, 0xFF, 0x0))) },
-            };
-
-            let text_color: Color = match self.text_color {
-                BTColor::Black  => { color!(0x0, 0x0, 0x0) },
-                BTColor::White  => { color!(0xFF, 0xFF, 0xFF) },
-            };
-
-            button::Appearance {
-                shadow_offset: Vector::default(),
-                background ,
-                text_color,
-                border: Border::with_radius(0),
-                shadow: Shadow::default(),
-            }
-
-        }
-    
-        fn hovered(&self, _style: &Self::Style) -> button::Appearance {
-            let background: Option<Background> = match self.background {
-                BColor::Bright      => { Some(Background::Color(color!(0xf4, 0xdf, 0xc1, 0.6))) },
-                BColor::Dark        => { Some(Background::Color(color!(0xb6, 0x87, 0x6b, 0.6))) },
-                BColor::HighLight   => { Some(Background::Color(color!(0xcc, 0xc0, 0xb4, 0.6))) },
-            };
-
-            let text_color: Color = match self.text_color {
-                BTColor::Black  => { color!(0x0, 0x0, 0x0) },
-                BTColor::White  => { color!(0xFF, 0xFF, 0xFF) },
-            };
-
-            button::Appearance {
-                shadow_offset: Vector::default(),
-                background ,
-                text_color,
-                border: Border::with_radius(0),
-                shadow: Shadow::default(),
-            }
-        }
-    
-        // fn pressed(&self, style: &Self::Style) -> button::Appearance {
-        //     if let Button::Custom(custom) = style {
-        //         return custom.pressed(self);
-        //     }
-    
-        //     button::Appearance {
-        //         shadow_offset: Vector::default(),
-        //         ..self.active(style)
-        //     }
-        // }
-    
-        fn disabled(&self, style: &Self::Style) -> button::Appearance {
-            self.active(style)
-        }
+        
     }
 }
