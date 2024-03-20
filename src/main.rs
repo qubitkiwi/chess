@@ -64,6 +64,7 @@ struct Chess {
     en_passant: Option<Point>,
     castling: Castling,
     promotion_popup: bool,
+    game_over: bool,
 }
 
 struct Castling {
@@ -359,8 +360,8 @@ fn move_able_pawn(board: &Board, p: &Point, en_passant: &Option<Point>) -> Vec<P
     let mut high_light: Vec<Point> = Vec::new();
 
     let h = p.h;
-    let w = p.w;    
-    println!("move alve pawn {:?}", en_passant);
+    let w = p.w;
+
     let piece = board[h][w].piece_state.clone().unwrap();
     match piece.owner {
         Owner::Black => {
@@ -476,11 +477,6 @@ fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
     cloned_board
 }
 
-// fn en_passant() {
-
-// }
-
-
 
 
 impl Application for Chess {
@@ -501,6 +497,7 @@ impl Application for Chess {
                 en_passant: None,
                 castling: Castling { w_r_rook:false, b_king: false,b_l_rook:false, b_r_rook:false,w_king:false,w_l_rook:false},
                 promotion_popup: false,
+                game_over: false,
             },
             Command::none()
         )
@@ -567,16 +564,19 @@ impl Application for Chess {
                     // en passant able
                     if piece_state.piece == ChessPiece::Pawn {
                         if ((p.h as i32 - point.h as i32).abs() == 2) && (p.w - point.w == 0) {
-                            println!("(p.h as i32 - point.h as i32).abs() {}, p.w - point.w {}", (p.h as i32 - point.h as i32).abs(), p.w - point.w);
-                            println!("point.h {}", point.h);
                             if piece_state.owner == Owner::White && p.h == 4 {
                                 self.en_passant = Some(Point {h: p.h+1, w: p.w});
                             } else if piece_state.owner == Owner::Black && p.h == 3 {
                                 self.en_passant = Some(Point {h: p.h-1, w: p.w});
                             }
                         }                    
-                    }   
-                    println!("move {:?}", self.en_passant);
+                    }
+
+                    if let Some(x) = self.board[p.h][p.w].piece_state {
+                        if x.piece == ChessPiece::King {
+                            self.game_over = true;
+                        }
+                    }
 
                     // move
                     let light = match piece_state.piece {
@@ -646,8 +646,10 @@ impl Application for Chess {
                 self.turn = Owner::White;
                 self.choose = None;
 
-                self.promotion_popup = true;
-
+                self.promotion_popup = false;                
+                self.en_passant = None;
+                self.castling = Castling { w_r_rook:false, b_king: false,b_l_rook:false, b_r_rook:false,w_king:false,w_l_rook:false};
+                self.game_over = false;
                 Command::none()     
             },
         }
@@ -686,7 +688,7 @@ impl Application for Chess {
                 Owner::Black => (custom_theme::BTColor::White, Owner::White),
             };
 
-            let modal = container(
+            let promotion_modal = container(
                 column![
                     text("promotion").size(20.0),
                     row![
@@ -698,7 +700,20 @@ impl Application for Chess {
                 ].align_items(Alignment::Center)
             ).style(theme::Container::Box);
 
-            Modal::new(content, modal).into()
+            Modal::new(content, promotion_modal).into()
+        } else if self.game_over {
+            let winner = match self.turn {
+                Owner::Black => { String::from("White") },
+                Owner::White => { String::from("Black") },
+            };
+
+            let game_over_modal = container(
+                text(format!("Win {}", winner)).size(50.0)
+            ).style(theme::Container::Box);
+
+            Modal::new(content, game_over_modal)
+            .on_blur(Message::Reset)
+            .into()
         } else {
             content.into()
         }
