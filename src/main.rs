@@ -3,7 +3,7 @@ use iced::{
 };
 use iced::theme::{self, Theme};
 use iced::widget::{
-    text, button, container, column, row, Column, Row,
+    button, column, container, row, text, Column, PickList, Row
 };
 mod modal;
 use modal::Modal;
@@ -355,12 +355,12 @@ fn move_able_knight(board: &Board, p: &Point) -> Vec<Point> {
     high_light
 }
 
-fn move_able_pawn(board: &Board, p: &Point) -> Vec<Point> {
+fn move_able_pawn(board: &Board, p: &Point, en_passant: &Option<Point>) -> Vec<Point> {
     let mut high_light: Vec<Point> = Vec::new();
 
     let h = p.h;
     let w = p.w;    
-
+    println!("move alve pawn {:?}", en_passant);
     let piece = board[h][w].piece_state.clone().unwrap();
     match piece.owner {
         Owner::Black => {
@@ -387,11 +387,21 @@ fn move_able_pawn(board: &Board, p: &Point) -> Vec<Point> {
                         high_light.push(Point { h: h + 1, w : w + 1});
                     }
                 }
+                if let Some(x) = en_passant {
+                    if (x.h == h + 1) && (x.w == w + 1) {
+                        high_light.push(Point { h: h + 1, w : w + 1});
+                    }
+                }
             }
 
             if w as i32 - 1 >= 0 {
                 if let Some(x) = board[h + 1][w - 1].piece_state {
                     if x.owner != piece.owner {
+                        high_light.push(Point { h: h + 1, w : w - 1});
+                    }
+                }
+                if let Some(x) = en_passant {
+                    if (x.h == h + 1) && (x.w == w - 1) {
                         high_light.push(Point { h: h + 1, w : w - 1});
                     }
                 }
@@ -421,11 +431,21 @@ fn move_able_pawn(board: &Board, p: &Point) -> Vec<Point> {
                         high_light.push(Point { h: h - 1, w : w + 1});
                     }
                 }
+                if let Some(x) = en_passant {
+                    if (x.h == h - 1) && (x.w == w + 1) {
+                        high_light.push(Point { h: h - 1, w : w + 1});
+                    }
+                }
             }
 
             if w as i32 - 1 >= 0 {
                 if let Some(x) = board[h - 1][w - 1].piece_state {
                     if x.owner != piece.owner {
+                        high_light.push(Point { h: h - 1, w : w - 1});
+                    }
+                }
+                if let Some(x) = en_passant {
+                    if (x.h == h - 1) && (x.w == w - 1) {
                         high_light.push(Point { h: h - 1, w : w - 1});
                     }
                 }
@@ -445,19 +465,6 @@ fn move_able_queen(board: &Board, p: &Point) -> Vec<Point> {
     high_light
 }
 
-fn move_able(board: &Board, p: &Point, piece: ChessPiece) -> Vec<Point> {
-    let move_able = match piece {
-        ChessPiece::Rook    => { move_able_rook },
-        ChessPiece::Bishop  => { move_able_bishop },
-        ChessPiece::King    => { move_able_king },
-        ChessPiece::Knight  => { move_able_knight },
-        ChessPiece::Pawn    => { move_able_pawn },
-        ChessPiece::Queen   => { move_able_queen },
-    };
-
-    move_able(&board, &p)
-}
-
 fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
     let mut cloned_board: Board = board.iter()
         .map(|inner_vector| inner_vector.clone())
@@ -469,9 +476,9 @@ fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
     cloned_board
 }
 
-fn en_passant() {
+// fn en_passant() {
 
-}
+// }
 
 
 
@@ -509,13 +516,31 @@ impl Application for Chess {
                 
                 if let Some((point, piece_state)) = &self.choose {
 
-                    let light = move_able(&self.board, &point, piece_state.piece);
+                    let light = match piece_state.piece {
+                        ChessPiece::Rook    => { move_able_rook(&self.board, &point) },
+                        ChessPiece::Bishop  => { move_able_bishop(&self.board, &point) },
+                        ChessPiece::King    => { move_able_king(&self.board, &point) },
+                        ChessPiece::Knight  => { move_able_knight(&self.board, &point) },
+                        ChessPiece::Queen   => { move_able_queen(&self.board, &point) },
+
+                        ChessPiece::Pawn    => { move_able_pawn(&self.board, &point, &self.en_passant) },
+                    };
+                
                     self.board = update_high_light(&self.board, light, false);
                 }
 
                 if let Some(x) = piece_state {
                     if x.owner == self.turn {
-                        let light = move_able(&self.board, &p, x.piece);
+                        
+                        let light = match x.piece {
+                            ChessPiece::Rook    => { move_able_rook(&self.board, &p) },
+                            ChessPiece::Bishop  => { move_able_bishop(&self.board, &p) },
+                            ChessPiece::King    => { move_able_king(&self.board, &p) },
+                            ChessPiece::Knight  => { move_able_knight(&self.board, &p) },
+                            ChessPiece::Queen   => { move_able_queen(&self.board, &p) },
+    
+                            ChessPiece::Pawn    => { move_able_pawn(&self.board, &p, &self.en_passant) },
+                        };
                         self.board = update_high_light(&self.board, light, true);
                         self.choose = Some((p, x));
                     }
@@ -524,21 +549,45 @@ impl Application for Chess {
                 Command::none()
             },
             Message::Move(p) => {
-                // let mut cloned_board: Board = self.board.iter()
-                //     .map(|inner_vector| inner_vector.clone())
-                //     .collect();
                 
                 if let Some((point, piece_state)) = self.choose.clone() {
+                    // en passant kill
+                    if piece_state.piece == ChessPiece::Pawn {
+                        if let Some(x) = &self.en_passant {
+                            if x.h == p.h && x.w == p.w {
+                                match piece_state.owner {
+                                    Owner::White => { self.board[x.h + 1][x.w] = TileState {piece_state: None, high_light: false}; },
+                                    Owner::Black => { self.board[x.h - 1][x.w] = TileState {piece_state: None, high_light: false}; },
+                                }   
+                            }
+                        }
+                    }
+                    self.en_passant = None;
                     
-                    // if piece_state.piece == ChessPiece::Pawn {
-                    //     // if let Some(x) = self.en_passant {
-                    //     //     // en passant
+                    // en passant able
+                    if piece_state.piece == ChessPiece::Pawn {
+                        if ((p.h as i32 - point.h as i32).abs() == 2) && (p.w - point.w == 0) {
+                            println!("(p.h as i32 - point.h as i32).abs() {}, p.w - point.w {}", (p.h as i32 - point.h as i32).abs(), p.w - point.w);
+                            println!("point.h {}", point.h);
+                            if piece_state.owner == Owner::White && p.h == 4 {
+                                self.en_passant = Some(Point {h: p.h+1, w: p.w});
+                            } else if piece_state.owner == Owner::Black && p.h == 3 {
+                                self.en_passant = Some(Point {h: p.h-1, w: p.w});
+                            }
+                        }                    
+                    }   
+                    println!("move {:?}", self.en_passant);
 
-                    //     // }
-                        
-                    // }
+                    // move
+                    let light = match piece_state.piece {
+                        ChessPiece::Rook    => { move_able_rook(&self.board, &point) },
+                        ChessPiece::Bishop  => { move_able_bishop(&self.board, &point) },
+                        ChessPiece::King    => { move_able_king(&self.board, &point) },
+                        ChessPiece::Knight  => { move_able_knight(&self.board, &point) },
+                        ChessPiece::Queen   => { move_able_queen(&self.board, &point) },
 
-                    let light = move_able(&self.board, &point, piece_state.piece);
+                        ChessPiece::Pawn    => { move_able_pawn(&self.board, &point, &self.en_passant) },
+                    };
                     self.board = update_high_light(&self.board, light, false);
 
                     self.board[p.h][p.w] = self.board[point.h][point.w];
@@ -550,8 +599,7 @@ impl Application for Chess {
                     if (piece_state.piece == ChessPiece::Pawn) && (((piece_state.owner == Owner::White) && (p.h == 0)) || ((piece_state.owner == Owner::Black) && (p.h == 7))) {
                         self.promotion_popup = true;
                     }
-                
-
+                    
                     
                     self.turn = match self.turn {
                         Owner::White => { Owner::Black },
