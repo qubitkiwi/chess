@@ -122,12 +122,12 @@ fn view_tile(tile: &TileState, h: usize, w: usize) -> Element<Message>  {
         };
 
         let t = match x.piece {
-            ChessPiece::Bishop  => { text("♝") },
-            ChessPiece::King    => { text("♚") },
-            ChessPiece::Pawn    => { text("♟") },
-            ChessPiece::Queen   => { text("♛") },
-            ChessPiece::Rook    => { text("♜") },
-            ChessPiece::Knight  => { text("♞") },
+            ChessPiece::Bishop  => { text("♝").shaping(text::Shaping::Advanced) },
+            ChessPiece::King    => { text("♚").shaping(text::Shaping::Advanced) },
+            ChessPiece::Pawn    => { text("♟").shaping(text::Shaping::Advanced) },
+            ChessPiece::Queen   => { text("♛").shaping(text::Shaping::Advanced) },
+            ChessPiece::Rook    => { text("♜").shaping(text::Shaping::Advanced) },
+            ChessPiece::Knight  => { text("♞").shaping(text::Shaping::Advanced) },
         };
         
         if tile.high_light == true {
