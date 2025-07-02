@@ -1,41 +1,22 @@
 use iced::{
-    Alignment, Application, Command, Element, Length, Settings, executor
+    Alignment, Task as Command, Element, Length, color
 };
-use iced::theme::{self, Theme};
+// use iced::theme::{self, Theme};
 use iced::widget::{
-    button, column, container, row, text, Column, PickList, Row
+    button, column, container, row, text, Column, Row
 };
+
 mod modal;
-use modal::Modal;
 mod custom_theme;
 
 
 pub fn main() -> iced::Result {
-    Chess::run(Settings {
-        ..Settings::default()
-    })
+    iced::application(Chess::title, Chess::update, Chess::view)
+    .run_with(Chess::new)
 }
+
 
 const CHESS_LEHGT: usize = 8;
-
-
-#[derive(Clone, Copy)]
-struct TileState {
-    piece_state: Option<PieceState>,
-    high_light: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PieceState {
-    owner: Owner,
-    piece: ChessPiece,
-}
-
-#[derive(Debug, Clone, PartialEq, Copy)]
-enum Owner {
-    White,
-    Black,
-}
 
 #[derive(Clone, PartialEq, Copy, Debug)]
 enum ChessPiece {
@@ -47,6 +28,23 @@ enum ChessPiece {
     Pawn,
 }
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum Player {
+    White,
+    Black,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PieceState {
+    owner: Player,
+    piece: ChessPiece,
+}
+
+#[derive(Clone, Copy)]
+struct TileState {
+    piece_state: Option<PieceState>,
+    high_light: bool,
+}
 
 
 #[derive(Debug, Clone)]
@@ -59,7 +57,7 @@ type Board = Vec<Vec<TileState>>;
 
 struct Chess {
     board: Board,
-    turn: Owner,
+    turn: Player,
     choose: Option<(Point, PieceState)>,
     en_passant: Option<Point>,
     castling: Castling,
@@ -88,7 +86,7 @@ fn init_board() -> Board {
     let mut board: Board = vec![vec![TileState {piece_state: None, high_light: false}; CHESS_LEHGT]; CHESS_LEHGT];
 
     // ♜♞♝♛♚♝♞♜
-    let chess_seq: [ChessPiece; 8] = [
+    let chess_seq: [ChessPiece; CHESS_LEHGT] = [
                         ChessPiece::Rook,
                         ChessPiece::Knight,
                         ChessPiece::Bishop,
@@ -100,12 +98,12 @@ fn init_board() -> Board {
                         ];
 
     for i in 0..CHESS_LEHGT {
-        board[0][i] = TileState {piece_state: Some( PieceState {owner: Owner::Black , piece: chess_seq[i].clone() }), high_light: false};
-        board[1][i] = TileState {piece_state: Some( PieceState {owner: Owner::Black , piece: ChessPiece::Pawn }), high_light: false};
+        board[0][i] = TileState {piece_state: Some( PieceState {owner: Player::Black , piece: chess_seq[i].clone() }), high_light: false};
+        board[1][i] = TileState {piece_state: Some( PieceState {owner: Player::Black , piece: ChessPiece::Pawn }), high_light: false};
 
         
-        board[6][i] = TileState {piece_state: Some( PieceState {owner: Owner::White , piece: ChessPiece::Pawn }), high_light: false};
-        board[7][i] = TileState {piece_state: Some( PieceState {owner: Owner::White , piece: chess_seq[i].clone() }), high_light: false};
+        board[6][i] = TileState {piece_state: Some( PieceState {owner: Player::White , piece: ChessPiece::Pawn }), high_light: false};
+        board[7][i] = TileState {piece_state: Some( PieceState {owner: Player::White , piece: chess_seq[i].clone() }), high_light: false};
     }
 
     board
@@ -113,27 +111,31 @@ fn init_board() -> Board {
 
 fn view_tile(tile: &TileState, h: usize, w: usize) -> Element<Message>  {
     let b;
-    let text_color;
+    let piece_color;
 
     if let Some(x) = &tile.piece_state {
         match x.owner {
-            Owner::White => { text_color = custom_theme::BTColor::White; },
-            Owner::Black => { text_color = custom_theme::BTColor::Black; },
+            Player::White => { piece_color = color!(0xffffff); },
+            Player::Black => { piece_color = color!(0x000000); },
         };
 
-        let t = match x.piece {
-            ChessPiece::Bishop  => { text("♝").shaping(text::Shaping::Advanced) },
-            ChessPiece::King    => { text("♚").shaping(text::Shaping::Advanced) },
-            ChessPiece::Pawn    => { text("♟").shaping(text::Shaping::Advanced) },
-            ChessPiece::Queen   => { text("♛").shaping(text::Shaping::Advanced) },
-            ChessPiece::Rook    => { text("♜").shaping(text::Shaping::Advanced) },
-            ChessPiece::Knight  => { text("♞").shaping(text::Shaping::Advanced) },
-        };
+        let piece = match x.piece {
+            ChessPiece::Bishop  => { text("♝") },
+            ChessPiece::King    => { text("♚") },
+            ChessPiece::Pawn    => { text("♟") },
+            ChessPiece::Queen   => { text("♛") },
+            ChessPiece::Rook    => { text("♜") },
+            ChessPiece::Knight  => { text("♞") },
+        }
+        .size(50.0)
+        .color(piece_color)
+        .shaping(text::Shaping::Advanced)
+        .center();
         
         if tile.high_light == true {
-            b = button(t.size(50.0).horizontal_alignment(iced::alignment::Horizontal::Center)).on_press(Message::Move(Point{ h, w }));
+            b = button(piece).on_press(Message::Move(Point{ h, w }));
         } else {
-            b = button(t.size(50.0).horizontal_alignment(iced::alignment::Horizontal::Center)).on_press(Message::MoveAble(Point{ h, w }, Some(*x)));
+            b = button(piece).on_press(Message::MoveAble(Point{ h, w }, Some(*x)));
         }
         
     } else {
@@ -143,23 +145,23 @@ fn view_tile(tile: &TileState, h: usize, w: usize) -> Element<Message>  {
         } else {
             b = button(" ");
         }
-        text_color = custom_theme::BTColor::White;
     }
     
-    let background = match tile.high_light {
-        true => { custom_theme::BColor::HighLight },
+    
+    let butten_style = match tile.high_light {
+        true => { custom_theme::ChessStyle::hightlighted_button_wrapper },
         false => {
             match (h, w) {
-                (h, w) if (h % 2) ^ (w % 2) == 0 => {custom_theme::BColor::Bright},
-                (_,_) => {custom_theme::BColor::Dark},
+                (h, w) if (h % 2) ^ (w % 2) == 0 => {custom_theme::ChessStyle::bright_button_wrapper},
+                (_,_) => {custom_theme::ChessStyle::dark_button_wrapper},
             }
         }
     };
-    
 
     b.height(Length::Fixed(80.0)).width(Length::Fixed(80.0))
-        .style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background, text_color})))
-        .into()   
+        .style(
+            move |_,state| butten_style(state))
+        .into()
 }
 
 fn move_able_rook(board: &Board, p: &Point) -> Vec<Point> {
@@ -364,7 +366,7 @@ fn move_able_pawn(board: &Board, p: &Point, en_passant: &Option<Point>) -> Vec<P
 
     let piece = board[h][w].piece_state.clone().unwrap();
     match piece.owner {
-        Owner::Black => {
+        Player::Black => {
             if h == 1 {
                 let mut dh = 1;
                 while dh <= 2 {
@@ -408,7 +410,7 @@ fn move_able_pawn(board: &Board, p: &Point, en_passant: &Option<Point>) -> Vec<P
                 }
             }
         },
-        Owner::White => {
+        Player::White => {
             if h == 6 {
                 let mut dh = 1;
                 while dh <= 2 {
@@ -479,19 +481,15 @@ fn update_high_light(board: &Board, light: Vec<Point>, value: bool) -> Board {
 
 
 
-impl Application for Chess {
-    type Message = Message;
-    type Theme = Theme;
-    type Executor = executor::Default;
-    type Flags = ();
+impl Chess {
 
-    fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
+    fn new() -> (Self, Command<Message>) {
         let board = init_board();
 
         (
             Self {
                 board,
-                turn: Owner::White,
+                turn: Player::White,
                 choose: None,
                 
                 en_passant: None,
@@ -553,8 +551,8 @@ impl Application for Chess {
                         if let Some(x) = &self.en_passant {
                             if x.h == p.h && x.w == p.w {
                                 match piece_state.owner {
-                                    Owner::White => { self.board[x.h + 1][x.w] = TileState {piece_state: None, high_light: false}; },
-                                    Owner::Black => { self.board[x.h - 1][x.w] = TileState {piece_state: None, high_light: false}; },
+                                    Player::White => { self.board[x.h + 1][x.w] = TileState {piece_state: None, high_light: false}; },
+                                    Player::Black => { self.board[x.h - 1][x.w] = TileState {piece_state: None, high_light: false}; },
                                 }   
                             }
                         }
@@ -564,9 +562,9 @@ impl Application for Chess {
                     // en passant able
                     if piece_state.piece == ChessPiece::Pawn {
                         if ((p.h as i32 - point.h as i32).abs() == 2) && (p.w - point.w == 0) {
-                            if piece_state.owner == Owner::White && p.h == 4 {
+                            if piece_state.owner == Player::White && p.h == 4 {
                                 self.en_passant = Some(Point {h: p.h+1, w: p.w});
-                            } else if piece_state.owner == Owner::Black && p.h == 3 {
+                            } else if piece_state.owner == Player::Black && p.h == 3 {
                                 self.en_passant = Some(Point {h: p.h-1, w: p.w});
                             }
                         }                    
@@ -596,14 +594,14 @@ impl Application for Chess {
                     
 
                     // Promotion
-                    if (piece_state.piece == ChessPiece::Pawn) && (((piece_state.owner == Owner::White) && (p.h == 0)) || ((piece_state.owner == Owner::Black) && (p.h == 7))) {
+                    if (piece_state.piece == ChessPiece::Pawn) && (((piece_state.owner == Player::White) && (p.h == 0)) || ((piece_state.owner == Player::Black) && (p.h == 7))) {
                         self.promotion_popup = true;
                     }
                     
                     
                     self.turn = match self.turn {
-                        Owner::White => { Owner::Black },
-                        Owner::Black => { Owner::White }
+                        Player::White => { Player::Black },
+                        Player::Black => { Player::White }
                     }
                 }
                 
@@ -613,7 +611,7 @@ impl Application for Chess {
             },
             Message::Promotion(piece_state) => {
                 match piece_state.owner {
-                    Owner::White => {
+                    Player::White => {
                         for i in 0..CHESS_LEHGT {
                             if let Some(x) = self.board[0][i].piece_state {
                                 if x.piece == ChessPiece::Pawn {
@@ -623,7 +621,7 @@ impl Application for Chess {
                             }
                         }
                     },
-                    Owner::Black => {
+                    Player::Black => {
                         for i in 0..CHESS_LEHGT {
                             if let Some(x) = self.board[7][i].piece_state {
                                 if x.piece == ChessPiece::Pawn {
@@ -643,7 +641,7 @@ impl Application for Chess {
                 let board = init_board();
 
                 self.board = board;
-                self.turn = Owner::White;
+                self.turn = Player::White;
                 self.choose = None;
 
                 self.promotion_popup = false;                
@@ -660,7 +658,7 @@ impl Application for Chess {
 
         let board = container((0..CHESS_LEHGT).into_iter().fold(Column::new() ,|c, i|
                 c.push(Element::from(
-                    (0..CHESS_LEHGT).into_iter().fold(Row::new().align_items(Alignment::Center) ,|c, j|
+                    (0..CHESS_LEHGT).into_iter().fold(Row::new(),|c, j|
                         c.push(
                             view_tile(&self.board[i][j], i, j)
                         )
@@ -672,48 +670,55 @@ impl Application for Chess {
                 column!(
                     button("reset").on_press(Message::Reset).padding(5),
                     board,
-                )
-                .align_items(Alignment::Center)
+                ).align_x(Alignment::Center)
             )
             .width(Length::Fill)
             .height(Length::Fill)
-            .center_y()
-            .center_x();
+            .center(Length::Fill);
+            
 
 
         if self.promotion_popup {
             
             let (text_color, owner) = match self.turn {
-                Owner::White => (custom_theme::BTColor::Black, Owner::Black),
-                Owner::Black => (custom_theme::BTColor::White, Owner::White),
+                Player::White => (color!(0x000000), Player::Black),
+                Player::Black => (color!(0xffffff), Player::White),
             };
 
             let promotion_modal = container(
                 column![
                     text("promotion").size(20.0),
                     row![
-                        button(text("♛").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Queen})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Bright, text_color: text_color.clone()}))),
-                        button(text("♝").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Bishop})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Dark, text_color: text_color.clone()}))),
-                        button(text("♞").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Knight})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Bright, text_color: text_color.clone()}))),
-                        button(text("♜").size(50.0)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Rook})).style(theme::Button::Custom( Box::new(custom_theme::Bbutton { background: custom_theme::BColor::Dark, text_color: text_color.clone()}))),
-                    ]
-                ].align_items(Alignment::Center)
-            ).style(theme::Container::Box);
+                        button(text("♛").size(50.0).color(text_color).shaping(text::Shaping::Advanced)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Queen}))
+                            .style( |_,state| { custom_theme::ChessStyle::bright_button_wrapper(state) } ),
+                        
+                        button(text("♝").size(50.0).color(text_color).shaping(text::Shaping::Advanced)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Bishop}))
+                            .style( |_,state| { custom_theme::ChessStyle::dark_button_wrapper(state) } ),
 
-            Modal::new(content, promotion_modal).into()
+                        button(text("♞").size(50.0).color(text_color).shaping(text::Shaping::Advanced)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Knight}))
+                            .style( |_,state| { custom_theme::ChessStyle::bright_button_wrapper(state) } ),
+                        
+                        button(text("♜").size(50.0).color(text_color).shaping(text::Shaping::Advanced)).on_press(Message::Promotion(PieceState {owner, piece: ChessPiece::Rook}))
+                            .style( |_,state| { custom_theme::ChessStyle::dark_button_wrapper(state) } ),
+                    ]
+                ]
+                .align_x(Alignment::Center)
+            );
+
+            modal::modal_no_skip(content, promotion_modal).into()
+
         } else if self.game_over {
             let winner = match self.turn {
-                Owner::Black => { String::from("White") },
-                Owner::White => { String::from("Black") },
+                Player::Black => { String::from("White") },
+                Player::White => { String::from("Black") },
             };
 
             let game_over_modal = container(
                 text(format!("Win {}", winner)).size(50.0)
-            ).style(theme::Container::Box);
+            ).style(container::rounded_box);
 
-            Modal::new(content, game_over_modal)
-            .on_blur(Message::Reset)
-            .into()
+            modal::modal(content, game_over_modal, Message::Reset).into()
+
         } else {
             content.into()
         }
