@@ -122,7 +122,7 @@ fn view_tile(tile: &TileState, h: usize, w: usize) -> Element<Message>  {
         let piece = match x.piece {
             ChessPiece::Bishop  => { text("♝") },
             ChessPiece::King    => { text("♚") },
-            ChessPiece::Pawn    => { text("♟") },
+            ChessPiece::Pawn    => { text("♙") },
             ChessPiece::Queen   => { text("♛") },
             ChessPiece::Rook    => { text("♜") },
             ChessPiece::Knight  => { text("♞") },
